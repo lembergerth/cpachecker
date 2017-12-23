@@ -90,7 +90,7 @@ public class ReachingDefState implements AbstractState, Serializable,
       String variableName,
       ProgramDefinitionPoint definition) {
     Map<String, Set<DefinitionPoint>> changed = new HashMap<>(toChange);
-    ImmutableSet<DefinitionPoint> insert = ImmutableSet.of((DefinitionPoint) definition);
+    ImmutableSet<DefinitionPoint> insert = ImmutableSet.of(definition);
     changed.put(variableName, insert);
     return changed;
   }

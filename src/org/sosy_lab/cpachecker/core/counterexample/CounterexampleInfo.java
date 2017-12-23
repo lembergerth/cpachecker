@@ -33,11 +33,14 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.sosy_lab.common.Appenders.AbstractAppender;
 import org.sosy_lab.common.JSON;
 import org.sosy_lab.common.UniqueIdGenerator;
@@ -47,6 +50,7 @@ import org.sosy_lab.cpachecker.cpa.arg.ARGState;
 import org.sosy_lab.cpachecker.cpa.arg.path.ARGPath;
 import org.sosy_lab.cpachecker.cpa.arg.path.PathIterator;
 import org.sosy_lab.cpachecker.util.Pair;
+import org.sosy_lab.cpachecker.util.faultLocalization.ErrorCause;
 
 public class CounterexampleInfo extends AbstractAppender {
 
@@ -63,6 +67,8 @@ public class CounterexampleInfo extends AbstractAppender {
   // list with additional information about the counterexample
   private final Collection<Pair<Object, PathTemplate>> furtherInfo;
 
+  private Collection<ErrorCause> possibleFaults = new HashSet<>();
+
   private static final CounterexampleInfo SPURIOUS = new CounterexampleInfo(true, null, null, false);
 
   private CounterexampleInfo(boolean pSpurious, ARGPath pTargetPath,
@@ -78,6 +84,17 @@ public class CounterexampleInfo extends AbstractAppender {
     } else {
       furtherInfo = null;
     }
+  }
+
+  private CounterexampleInfo(
+      boolean pSpurious,
+      ARGPath pTargetPath,
+      CFAPathWithAssumptions pAssignments,
+      boolean pIsPreciseCEX,
+      Collection<ErrorCause> pPossibleFaults
+  ) {
+    this(pSpurious, pTargetPath, pAssignments, pIsPreciseCEX);
+    possibleFaults = pPossibleFaults;
   }
 
   public static CounterexampleInfo spurious() {
@@ -136,6 +153,19 @@ public class CounterexampleInfo extends AbstractAppender {
     checkArgument(pAssignments.fitsPath(pTargetPath.getFullPath()));
     return new CounterexampleInfo(false, checkNotNull(pTargetPath), pAssignments, true);
   }
+
+  public static CounterexampleInfo withFaultAnnotation(
+      CounterexampleInfo pCounterexample,
+      Collection<ErrorCause> pPossibleFaults) {
+
+        return new CounterexampleInfo(
+                pCounterexample.spurious,
+                pCounterexample.targetPath,
+                pCounterexample.assignments,
+                pCounterexample.isPreciseCounterExample,
+                pPossibleFaults);
+  }
+
 
   public boolean isSpurious() {
     return spurious;
@@ -205,6 +235,12 @@ public class CounterexampleInfo extends AbstractAppender {
     return assignments.getExactVariableValues(targetPath);
   }
 
+  public Collection<ErrorCause> getErrorCauses() {
+    checkState(!spurious);
+    checkState(isPreciseCounterExample);
+    return checkNotNull(possibleFaults);
+  }
+
   /**
    * Create a JSON representation of this counterexample,
    * which is used for the HTML report.
@@ -214,6 +250,7 @@ public class CounterexampleInfo extends AbstractAppender {
     checkState(!spurious);
     int pathLength = targetPath.getFullPath().size();
     List<Map<?, ?>> path = new ArrayList<>(pathLength);
+    Map<ErrorCause, Integer> causeIndices = getCauseIndices();
 
     PathIterator iterator = targetPath.fullPathIterator();
     while (iterator.hasNext()) {
@@ -239,11 +276,42 @@ public class CounterexampleInfo extends AbstractAppender {
         elem.put("val", edgeWithAssignment.printForHTML());
       }
 
+      Set<Integer> partOfCauses = getCausesPartOf(edge, causeIndices);
+      if (!partOfCauses.isEmpty()) {
+        elem.put("faulty_for", Arrays.toString(partOfCauses.toArray()));
+      }
+
       path.add(elem);
       iterator.advance();
     }
     JSON.writeJSONString(path, sb);
   }
+
+  private Map<ErrorCause, Integer> getCauseIndices() {
+    Map<ErrorCause, Integer> indices = new HashMap<>();
+    int idx = 0;
+    for (ErrorCause c : possibleFaults) {
+      indices.put(c, idx);
+      idx++;
+    }
+
+    return indices;
+  }
+
+  private Set<Integer> getCausesPartOf(
+      final CFAEdge pEdge,
+      final Map<ErrorCause, Integer> causeIndices
+  ) {
+    Set<Integer> causeIndicesPartOf = new HashSet<>();
+    for (ErrorCause e : possibleFaults) {
+      if (e.contains(pEdge)) {
+        causeIndicesPartOf.add(causeIndices.get(e));
+      }
+    }
+
+    return causeIndicesPartOf;
+  }
+
 
   @Override
   public void appendTo(Appendable out) throws IOException {

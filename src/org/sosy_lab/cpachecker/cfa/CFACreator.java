@@ -97,6 +97,7 @@ import org.sosy_lab.cpachecker.core.CPAcheckerResult.Result;
 import org.sosy_lab.cpachecker.core.interfaces.Statistics;
 import org.sosy_lab.cpachecker.core.reachedset.UnmodifiableReachedSet;
 import org.sosy_lab.cpachecker.cpa.threading.ThreadingTransferRelation;
+import org.sosy_lab.cpachecker.exceptions.CPAException;
 import org.sosy_lab.cpachecker.exceptions.CParserException;
 import org.sosy_lab.cpachecker.exceptions.JParserException;
 import org.sosy_lab.cpachecker.exceptions.ParserException;
@@ -105,6 +106,8 @@ import org.sosy_lab.cpachecker.util.CFAUtils;
 import org.sosy_lab.cpachecker.util.LiveVariables;
 import org.sosy_lab.cpachecker.util.LoopStructure;
 import org.sosy_lab.cpachecker.util.Pair;
+import org.sosy_lab.cpachecker.util.dependencegraph.DGBuilder;
+import org.sosy_lab.cpachecker.util.dependencegraph.DependenceGraph;
 import org.sosy_lab.cpachecker.util.variableclassification.VariableClassification;
 import org.sosy_lab.cpachecker.util.variableclassification.VariableClassificationBuilder;
 import org.sosy_lab.cpachecker.util.variableclassification.VariableClassificationBuilder.VariableClassificationStatistics;
@@ -465,6 +468,7 @@ private boolean classifyNodes = false;
 
     // Get information about variables, needed for some analysis.
     final Optional<VariableClassification> varClassification;
+    final Optional<DependenceGraph> dependenceGraph;
     if (language == Language.C) {
       try {
         stats.variableClassificationTime.start();
@@ -476,8 +480,17 @@ private boolean classifyNodes = false;
       } finally {
         stats.variableClassificationTime.stop();
       }
+
+      try {
+        dependenceGraph = Optional.of(
+            new DGBuilder(cfa, config, logger, shutdownNotifier).create());
+      } catch (CPAException pE) {
+        throw new CParserException(pE);
+      }
+
     } else {
       varClassification = Optional.empty();
+      dependenceGraph = Optional.empty();
     }
 
     // create the live variables if the variable classification is present
@@ -491,7 +504,7 @@ private boolean classifyNodes = false;
 
     stats.processingTime.stop();
 
-    final ImmutableCFA immutableCFA = cfa.makeImmutableCFA(varClassification);
+    final ImmutableCFA immutableCFA = cfa.makeImmutableCFA(varClassification, dependenceGraph);
 
     // check the super CFA starting at the main function
     stats.checkTime.start();
